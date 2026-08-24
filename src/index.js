@@ -1,18 +1,19 @@
-const VERSAO = "1.0.1";
+const VERSAO = "1.0.3";
+// Códigos canônicos alinhados ao catálogo V3 do projeto.
 const BANCAS = [
-  ["rio-federal", "Rio / Federal"],
-  ["maluquinha", "Maluquinha RJ"],
-  ["bahia", "Bahia / Maluca"],
-  ["sorte-rs", "Sorte — Rio Grande do Sul"],
-  ["minas-gerais", "Minas Gerais"],
-  ["look-goias", "Look / Goiás"],
-  ["boa-sorte-goias", "Boa Sorte — Goiás"],
-  ["sao-paulo", "São Paulo"],
-  ["lotece", "Lotece"],
-  ["lotep", "Lotep"],
-  ["capital", "Capital"],
-  ["nacional", "Loteria Nacional"],
-].map(([codigo, nome]) => ({ codigo, nome }));
+  ["rio-federal", "Rio / Federal", "RIO_FEDERAL"],
+  ["maluquinha", "Maluquinha RJ", "MALUQUINHA_RJ"],
+  ["bahia", "Bahia / Maluca", "BAHIA"],
+  ["sorte-rs", "Sorte — Rio Grande do Sul", "SORTE_RS"],
+  ["minas-gerais", "Minas Gerais", "MINAS_GERAIS"],
+  ["look-goias", "Look / Goiás", "LOOK_GOIAS"],
+  ["boa-sorte-goias", "Boa Sorte — Goiás", "BOA_SORTE_GOIAS"],
+  ["sao-paulo", "São Paulo", "SAO_PAULO"],
+  ["lotece", "Lotece", "LOTECE"],
+  ["lotep", "Lotep", "LOTEP_PB"],
+  ["capital", "Capital", "CAPITAL"],
+  ["nacional", "Loteria Nacional", "NACIONAL"],
+].map(([codigo, nome, loteria_canonica]) => ({ codigo, nome, loteria_canonica }));
 
 function cors() {
   return {
@@ -30,61 +31,137 @@ function json(data, status = 200) {
   });
 }
 
-function asNumeroPosicao(v) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-}
-
-function pareceArrayPosicoes(arr) {
-  if (!Array.isArray(arr) || arr.length === 0) return false;
-  const objs = arr.filter((x) => x && typeof x === "object" && !Array.isArray(x));
-  if (objs.length !== arr.length) return false;
-  let comPosicao = 0;
-  for (const x of objs) {
-    if (asNumeroPosicao(x.posicao) !== null || asNumeroPosicao(x.ordem) !== null || asNumeroPosicao(x.premio) !== null) {
-      comPosicao++;
-    }
-  }
-  return comPosicao >= Math.max(1, Math.ceil(arr.length * 0.6));
-}
-
-function filtrar1a7(valor, chave = "") {
-  if (Array.isArray(valor)) {
-    if (pareceArrayPosicoes(valor)) {
-      return valor
-        .filter((x) => {
-          const p = asNumeroPosicao(x.posicao ?? x.ordem ?? x.premio);
-          return p === null || (p >= 1 && p <= 7);
-        })
-        .slice(0, 7)
-        .map((x) => filtrar1a7(x));
-    }
-    if (["premios", "posicoes"].includes(String(chave).toLowerCase())) {
-      return valor.slice(0, 7).map((x) => filtrar1a7(x));
-    }
-    return valor.map((x) => filtrar1a7(x));
-  }
-
-  if (valor && typeof valor === "object") {
-    const out = {};
-    for (const [k, v] of Object.entries(valor)) {
-      if (k === "total_premios" && Number(v) > 7) out[k] = 7;
-      else out[k] = filtrar1a7(v, k);
-    }
-    return out;
-  }
-
-  return valor;
-}
-
 function origemBase(env) {
   return String(env.ORIGEM_URL || "https://resultados-jb-api.alanasdls.workers.dev").replace(/\/$/, "");
+}
+
+function normalizarData(v) {
+  const s = String(v || "").trim();
+  const mIso = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (mIso) return `${mIso[1]}-${mIso[2]}-${mIso[3]}`;
+  const mBr = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (mBr) return `${mBr[3]}-${mBr[2]}-${mBr[1]}`;
+  return null;
+}
+
+function normalizarHorario(v) {
+  const s = String(v || "").trim();
+  const m = s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (h < 0 || h > 23 || min < 0 || min > 59) return null;
+  return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+}
+
+function premioNormalizado(p) {
+  if (!p || typeof p !== "object") return null;
+  const posicao = Number(p.posicao ?? p.ordem ?? p.premio);
+  if (!Number.isInteger(posicao) || posicao < 1 || posicao > 7) return null;
+  const milharRaw = String(p.milhar ?? "").replace(/\D/g, "");
+  if (!milharRaw) return null;
+  const milhar = milharRaw.padStart(4, "0").slice(-4);
+  const centena = String(p.centena ?? milhar.slice(-3)).replace(/\D/g, "").padStart(3, "0").slice(-3);
+  const dezena = String(p.dezena ?? milhar.slice(-2)).replace(/\D/g, "").padStart(2, "0").slice(-2);
+  const grupoNum = Number(p.grupo);
+  const out = {
+    posicao,
+    milhar,
+    centena,
+    dezena,
+  };
+  if (Number.isInteger(grupoNum) && grupoNum >= 1 && grupoNum <= 25) out.grupo = grupoNum;
+  if (p.bicho != null && String(p.bicho).trim()) out.bicho = String(p.bicho).trim();
+  return out;
+}
+
+function extracaoValida(ex) {
+  if (!ex || typeof ex !== "object") return false;
+  const codigo = String(ex.codigo || "").trim().toUpperCase();
+  if (!codigo || codigo === "TITLE") return false;
+  const nome = String(ex.nome || "").trim();
+  if (!nome || nome.includes("' + title + '") || nome.toLowerCase() === "title") return false;
+  return true;
+}
+
+function extrairCandidatas(payload) {
+  const fontes = Array.isArray(payload?.fontes) ? payload.fontes : [];
+  const candidatas = [];
+  fontes.forEach((fonte, fonteIndex) => {
+    const extracoes = Array.isArray(fonte?.extracoes) ? fonte.extracoes : [];
+    extracoes.forEach((ex, extracaoIndex) => {
+      if (!extracaoValida(ex)) return;
+      const premios = (Array.isArray(ex.premios) ? ex.premios : [])
+        .map(premioNormalizado)
+        .filter(Boolean)
+        .sort((a, b) => a.posicao - b.posicao);
+      const unicos = [];
+      const vistos = new Set();
+      for (const p of premios) {
+        if (vistos.has(p.posicao)) continue;
+        vistos.add(p.posicao);
+        unicos.push(p);
+      }
+      candidatas.push({
+        codigo: String(ex.codigo).trim().toUpperCase(),
+        nome: String(ex.nome || ex.codigo).trim(),
+        horario: normalizarHorario(ex.horario),
+        data_resultado: normalizarData(ex.data_resultado),
+        premios: unicos,
+        fonte_id: String(fonte?.id || `fonte-${fonteIndex}`),
+        fonte_index: fonteIndex,
+        extracao_index: extracaoIndex,
+      });
+    });
+  });
+  return candidatas;
+}
+
+function dataMaisRecente(candidatas) {
+  const datas = candidatas.map((x) => x.data_resultado).filter(Boolean).sort();
+  return datas.length ? datas[datas.length - 1] : null;
+}
+
+function scoreCandidata(c) {
+  const temSete = c.premios.length >= 7 ? 100000 : 0;
+  const quantidade = c.premios.length * 1000;
+  const temHorario = c.horario ? 100 : 0;
+  // Em empate, prioriza a fonte mais antiga/alta na ordem da origem.
+  return temSete + quantidade + temHorario - c.fonte_index;
+}
+
+function consolidar(candidatas, dataAlvo, loteriaCanonica) {
+  const filtradas = candidatas.filter((c) => c.data_resultado === dataAlvo);
+  const porCodigo = new Map();
+  for (const c of filtradas) {
+    const atual = porCodigo.get(c.codigo);
+    if (!atual || scoreCandidata(c) > scoreCandidata(atual)) porCodigo.set(c.codigo, c);
+  }
+
+  return [...porCodigo.values()]
+    .map((c) => ({
+      loteria_canonica: loteriaCanonica,
+      codigo: c.codigo,
+      codigo_extracao_origem: c.codigo,
+      nome: c.nome,
+      horario: c.horario,
+      data_resultado: c.data_resultado,
+      premios: c.premios.slice(0, 7),
+      completo_1a7: c.premios.length >= 7,
+    }))
+    .sort((a, b) => {
+      const ha = a.horario || "99:99";
+      const hb = b.horario || "99:99";
+      return ha.localeCompare(hb) || a.codigo.localeCompare(b.codigo);
+    });
 }
 
 async function buscarOrigem(requestUrl, env) {
   const u = new URL(requestUrl);
   const destino = new URL(origemBase(env) + "/resultados");
-  for (const [k, v] of u.searchParams.entries()) destino.searchParams.append(k, v);
+  for (const [k, v] of u.searchParams.entries()) {
+    if (k !== "debug") destino.searchParams.append(k, v);
+  }
   const r = await fetch(destino.toString(), {
     headers: { accept: "application/json" },
     cf: { cacheTtl: 0, cacheEverything: false },
@@ -109,11 +186,12 @@ export default {
         ok: true,
         servico: "resultados-jb-api-1a7",
         versao: VERSAO,
-        modo: "COMPATIBILIDADE_1_A_7",
+        modo: "CONSOLIDADO_1_A_7",
         independente_sorte777: true,
         origem: origemBase(env),
         total_bancas: BANCAS.length,
-        contrato: "preserva payload da origem e limita arrays de premios/posicoes a 1º–7º",
+        contrato: "payload limpo; uma extracao consolidada por codigo; data estrita; premios 1º–7º; loteria_canonica V3",
+        canonicos_v3: true,
       });
     }
 
@@ -121,28 +199,82 @@ export default {
       return json({ ok: true, versao: VERSAO, total: BANCAS.length, bancas: BANCAS });
     }
 
+    if (url.pathname === "/canonicos") {
+      return json({
+        ok: true,
+        versao: VERSAO,
+        padrao: "SORTE777_V3",
+        identidade_recomendada: "data + loteria_canonica + codigo_extracao_origem + horario",
+        observacao: "grade_canonica V3 não é inventada nesta camada; somente códigos canônicos confirmados são expostos",
+        total: BANCAS.length,
+        loterias: BANCAS.map(({ codigo, nome, loteria_canonica }) => ({ banca: codigo, nome, loteria_canonica })),
+      });
+    }
+
     if (url.pathname === "/resultados") {
       const banca = String(url.searchParams.get("banca") || "").trim().toLowerCase();
       if (!banca) return json({ ok: false, erro: "BANCA_OBRIGATORIA", bancas: BANCAS.map((x) => x.codigo) }, 400);
-      if (!BANCAS.some((x) => x.codigo === banca)) return json({ ok: false, erro: "BANCA_NAO_SUPORTADA", banca, bancas: BANCAS.map((x) => x.codigo) }, 404);
+      const bancaInfo = BANCAS.find((x) => x.codigo === banca);
+      if (!bancaInfo) return json({ ok: false, erro: "BANCA_NAO_SUPORTADA", banca, bancas: BANCAS.map((x) => x.codigo) }, 404);
+
+      const dataSolicitadaRaw = url.searchParams.get("data");
+      const dataSolicitada = dataSolicitadaRaw ? normalizarData(dataSolicitadaRaw) : null;
+      if (dataSolicitadaRaw && !dataSolicitada) {
+        return json({ ok: false, erro: "DATA_INVALIDA", esperado: "AAAA-MM-DD", recebido: dataSolicitadaRaw }, 400);
+      }
 
       const origem = await buscarOrigem(request.url, env);
       if (!origem.ok) {
         return json({ ok: false, versao: VERSAO, erro: "FALHA_API_ORIGEM", status_origem: origem.status, detalhe: origem.payload ?? origem.detalhe ?? null }, 502);
       }
 
-      const filtrado = filtrar1a7(origem.payload);
-      if (filtrado && typeof filtrado === "object" && !Array.isArray(filtrado)) {
-        filtrado.api_compat = {
-          servico: "resultados-jb-api-1a7",
+      const candidatas = extrairCandidatas(origem.payload);
+      const dataAlvo = dataSolicitada || dataMaisRecente(candidatas);
+      if (!dataAlvo) {
+        return json({
+          sucesso: false,
           versao: VERSAO,
-          faixa: "1-7",
-          origem_preservada: true,
+          banca,
+          nome: bancaInfo.nome,
+          erro: "SEM_DATA_RESULTADO_VALIDA",
+          extracoes: [],
+        }, 404);
+      }
+
+      const extracoes = consolidar(candidatas, dataAlvo, bancaInfo.loteria_canonica);
+      const completas = extracoes.filter((x) => x.completo_1a7).length;
+      const incompletas = extracoes.length - completas;
+
+      const resposta = {
+        sucesso: true,
+        versao: VERSAO,
+        banca,
+        loteria_canonica: bancaInfo.loteria_canonica,
+        nome: origem.payload?.nome || bancaInfo.nome,
+        estado: origem.payload?.estado ?? null,
+        data_resultado: dataAlvo,
+        atualizado_em: new Date().toISOString(),
+        faixa_premios: "1-7",
+        extracoes,
+        resumo: {
+          total_extracoes: extracoes.length,
+          completas_1a7: completas,
+          incompletas_1a7: incompletas,
+        },
+      };
+
+      if (url.searchParams.get("debug") === "1") {
+        resposta.debug = {
+          candidatas_total: candidatas.length,
+          candidatas_data_alvo: candidatas.filter((x) => x.data_resultado === dataAlvo).length,
+          fontes_origem_total: Array.isArray(origem.payload?.fontes) ? origem.payload.fontes.length : 0,
+          observacao: "fontes brutas omitidas no payload normal",
         };
       }
-      return json(filtrado);
+
+      return json(resposta);
     }
 
-    return json({ ok: false, erro: "ROTA_NAO_ENCONTRADA", rotas: ["GET /health", "GET /bancas", "GET /resultados?banca=<codigo>&data=AAAA-MM-DD"] }, 404);
+    return json({ ok: false, erro: "ROTA_NAO_ENCONTRADA", rotas: ["GET /health", "GET /bancas", "GET /resultados?banca=<codigo>&data=AAAA-MM-DD", "GET /resultados?banca=<codigo>&data=AAAA-MM-DD&debug=1"] }, 404);
   },
 };
