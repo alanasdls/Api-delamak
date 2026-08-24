@@ -1,4 +1,4 @@
-const VERSAO = "1.0.5";
+const VERSAO = "1.0.6";
 // Códigos canônicos alinhados ao catálogo V3 do projeto.
 const BANCAS = [
   ["rio-federal", "Rio / Federal", "RIO_FEDERAL"],
@@ -264,24 +264,45 @@ function dataMaisRecente(candidatas) {
   return datas.length ? datas[datas.length - 1] : null;
 }
 
+function coberturaSequencial(premios, alvo) {
+  const pos = new Set((Array.isArray(premios) ? premios : []).map((p) => Number(p.posicao)));
+  let n = 0;
+  for (let i = 1; i <= alvo; i++) {
+    if (!pos.has(i)) break;
+    n++;
+  }
+  return n;
+}
+
 function scoreCandidata(c, banca) {
   const alvo = ehBahiaRegular(banca, c) ? 10 : 7;
-  const temAlvo = c.premios.length >= alvo ? 100000 : 0;
-  const quantidade = c.premios.length * 1000;
-  const temHorario = c.horario ? 100 : 0;
-  // Em empate, prioriza a fonte mais antiga/alta na ordem da origem.
-  return temAlvo + quantidade + temHorario - c.fonte_index;
+  const cobertura = coberturaSequencial(c.premios, alvo);
+  const completa = cobertura === alvo ? 1000000 : 0;
+  const sequencial = cobertura * 10000;
+  const quantidade = c.premios.length * 100;
+  const temHorario = c.horario ? 10 : 0;
+  // Em empate, prioriza a fonte mais alta na ordem original.
+  return completa + sequencial + quantidade + temHorario - c.fonte_index;
+}
+
+function chaveConsolidacao(c, banca) {
+  // Bahia regular pode aparecer com códigos diferentes entre fontes. A identidade
+  // segura para escolher a melhor fonte é regular + horário (na mesma data).
+  if (ehBahiaRegular(banca, c) && c.horario) return `BAHIA_REGULAR|${c.horario}`;
+  // Malucas permanecem separadas por código para não misturar modalidades/grades.
+  return c.codigo;
 }
 
 function consolidar(candidatas, dataAlvo, loteriaCanonica, banca, federalCaixa) {
   const filtradas = candidatas.filter((c) => c.data_resultado === dataAlvo);
-  const porCodigo = new Map();
+  const selecionadas = new Map();
   for (const c of filtradas) {
-    const atual = porCodigo.get(c.codigo);
-    if (!atual || scoreCandidata(c, banca) > scoreCandidata(atual, banca)) porCodigo.set(c.codigo, c);
+    const chave = chaveConsolidacao(c, banca);
+    const atual = selecionadas.get(chave);
+    if (!atual || scoreCandidata(c, banca) > scoreCandidata(atual, banca)) selecionadas.set(chave, c);
   }
 
-  return [...porCodigo.values()]
+  return [...selecionadas.values()]
     .map((c) => {
       if (ehBahiaRegular(banca, c)) {
         const premios = [...c.premios]
@@ -375,11 +396,11 @@ export default {
         ok: true,
         servico: "resultados-jb-api-1a7",
         versao: VERSAO,
-        modo: "REGRAS_POR_BANCA",
+        modo: "REGRAS_POR_BANCA_PRIORIDADE_FONTE_COMPLETA",
         independente_sorte777: true,
         origem: origemBase(env),
         total_bancas: BANCAS.length,
-        contrato: "Regras por banca: Bahia regular preserva 1º–10º reais da fonte; demais bancas compatíveis usam 1º–7º com cálculo 6º/7º; Federal usa 5 dígitos CAIXA no 7º quando disponível; canônicos V3",
+        contrato: "Regras por banca: Bahia regular prioriza por horário a fonte com 1º–10º completos e nunca calcula posições faltantes; demais bancas compatíveis usam 1º–7º com cálculo 6º/7º; Federal usa 5 dígitos CAIXA no 7º quando disponível; canônicos V3",
         canonicos_v3: true,
       });
     }
@@ -463,7 +484,7 @@ export default {
           candidatas_total: candidatas.length,
           candidatas_data_alvo: candidatas.filter((x) => x.data_resultado === dataAlvo).length,
           fontes_origem_total: Array.isArray(origem.payload?.fontes) ? origem.payload.fontes.length : 0,
-          observacao: "fontes brutas omitidas no payload normal; Bahia regular preserva 1º–10º da fonte",
+          observacao: "fontes brutas omitidas no payload normal; Bahia regular consolida por horário e prioriza a candidata com 1º–10º sequenciais completos",
           federal_caixa_5d_disponivel: Boolean(federalCaixa),
         };
       }
