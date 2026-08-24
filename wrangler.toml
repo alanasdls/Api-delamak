@@ -1,6 +1,7 @@
 name = "resultados-jb-api-1a7"
 main = "src/index.js"
 compatibility_date = "2026-08-01"
+compatibility_flags = ["global_fetch_strictly_public"]
 workers_dev = true
 
 [vars]

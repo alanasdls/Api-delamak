@@ -24,4 +24,4 @@ API independente para sites legados/compatíveis que consomem apenas posições 
 4. Teste `/health`, `/bancas` e pelo menos duas bancas em `/resultados`.
 
 ## Importante
-Esta V1.0.0 é uma camada de compatibilidade 1–7. Ela não modifica a API origem e não altera a `sorte-777-api`.
+Esta V1.0.1 é uma camada de compatibilidade 1–7. Ela não modifica a API origem e não altera a `sorte-777-api`.
