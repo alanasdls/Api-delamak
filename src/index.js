@@ -1,4 +1,4 @@
-const VERSAO = "1.0.0";
+const VERSAO = "1.0.1";
 const BANCAS = [
   ["rio-federal", "Rio / Federal"],
   ["maluquinha", "Maluquinha RJ"],
