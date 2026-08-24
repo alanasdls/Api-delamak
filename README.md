@@ -1,33 +1,22 @@
-# Resultados JB API 1–7 — V1.0.3
+# RESULTADOS JB API 1A7 — V1.0.5 REGRAS POR BANCA
 
-API independente para sites que consomem resultados do 1º ao 7º prêmio.
+API independente da SORTE777 para consumo por outros sites.
 
-## V1.0.3
-- Mantém a API do SORTE777 intacta.
-- Consolida o payload: não expõe `fontes` brutas na resposta normal.
-- Remove extrações inválidas como `TITLE`.
-- Aplica filtro estrito de `data_resultado` quando `?data=AAAA-MM-DD` é informado.
-- Sem `?data`, usa a data mais recente encontrada nas extrações válidas.
-- Para códigos duplicados, prioriza a candidata com 7 posições; em seguida, a de maior quantidade de prêmios.
-- Entrega somente posições 1–7 normalizadas.
-- Informa `completo_1a7` por extração e resumo de completas/incompletas.
-- Não depende de Service Binding do SORTE777; usa apenas `ORIGEM_URL` pública.
+## Regras
+
+- Bahia regular: preserva 1º ao 10º reais da fonte; não calcula 6º/7º.
+- Maluca Bahia: não herda automaticamente a regra da Bahia regular nem o cálculo genérico 6º/7º. Enquanto a regra própria não estiver definida, preserva somente os prêmios recebidos da fonte.
+- Bancas compatíveis: 1º–5º da fonte, 6º por soma, 7º por produto/penúltima centena.
+- Federal regular: 7º usa os números originais de 5 dígitos da CAIXA quando necessário e validado.
+- Canônicos V3 preservados.
 
 ## Rotas
+
 - `GET /health`
 - `GET /bancas`
-- `GET /resultados?banca=rio-federal&data=2026-08-23`
-- `GET /resultados?banca=rio-federal&data=2026-08-23&debug=1`
-
-## Bancas
-`rio-federal`, `maluquinha`, `bahia`, `sorte-rs`, `minas-gerais`, `look-goias`, `boa-sorte-goias`, `sao-paulo`, `lotece`, `lotep`, `capital`, `nacional`.
+- `GET /canonicos`
+- `GET /resultados?banca=<codigo>&data=AAAA-MM-DD`
 
 ## Observação
-A V1.0.3 é uma camada consolidada 1–7 sobre a API origem atual. Ela não modifica a API origem e não altera a `sorte-777-api`.
 
-
-## V1.0.3 — Códigos canônicos V3
-- Expõe `loteria_canonica` nas 12 bancas, no topo de `/resultados` e em cada extração.
-- Nova rota `GET /canonicos`.
-- Usa exclusivamente os códigos confirmados da V3.
-- Não inventa `grade_canonica`; o código/horário da extração de origem é preservado até integração do catálogo exato de grades V3.
+A API do SORTE777 não é alterada por este projeto.
